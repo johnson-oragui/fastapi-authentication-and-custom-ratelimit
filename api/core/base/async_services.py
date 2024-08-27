@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-class Services(ABC):
+class AsyncServices(ABC):
     @abstractmethod
     async def create(self):
         pass
