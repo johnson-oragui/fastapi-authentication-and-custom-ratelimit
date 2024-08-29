@@ -1,33 +1,30 @@
-from typing import Annotated, AsyncIterator
-from fastapi import FastAPI, status, Depends
+from typing import AsyncIterator
+from fastapi import FastAPI, status
 from fastapi.exceptions import HTTPException, RequestValidationError
 from sqlalchemy.exc import SQLAlchemyError
-from redis.exceptions import RedisError
+from aioredis.exceptions import RedisError
 from celery.exceptions import CeleryError
-from pika.exceptions import AMQPError
+from aio_pika.exceptions import AMQPError
 from contextlib import asynccontextmanager
 
 from api.utils.exceptions import GlobalExceptionHandler
-from api.db.database import get_db, create_tables
+from api.db.database import engine
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     
     """
-    # Initialize resources
-    await create_tables()
-    print("Database connection established")
-    print("Database tables created or verified")
+    print("Starting up application...")
     # Yield control back to FastAPI while app is running
     try:
         yield
     finally:
-        print("Database connection closed")
-        print("Application shutdown")
+        await engine.dispose()
+        print("Shutting down application...")
 
 # Create FastAPI app with lifespan
-app = FastAPI(lifespan=lifespan)    
+app = FastAPI(lifespan=lifespan)
 
 app.get("/", tags=['HOME'])
 async def read_root():
