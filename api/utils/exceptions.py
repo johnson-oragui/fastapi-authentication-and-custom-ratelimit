@@ -6,9 +6,9 @@ from fastapi import Request, status, HTTPException, Depends
 from fastapi.exceptions import RequestValidationError
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.exc import SQLAlchemyError
-from redis.exceptions import RedisError
+from aioredis.exceptions import RedisError
 from celery.exceptions import CeleryError
-from pika.exceptions import AMQPError
+from aio_pika.exceptions import AMQPError
 
 from api.v1.services.auth import auth_service, User
 
