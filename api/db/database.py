@@ -4,18 +4,20 @@ from contextlib import asynccontextmanager
 from sqlalchemy.orm import (
     DeclarativeBase,
 )
+
 from sqlalchemy import MetaData, pool
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
     AsyncSession,
-    async_scoped_session
+    async_scoped_session,
+    AsyncAttrs
 )
 from decouple import config
 
 # Create an asynchronous engine with future usage enabled
-class Base(DeclarativeBase):
+class Base(AsyncAttrs, DeclarativeBase):
     metadata = MetaData(schema='public')
 
 DB_URL: str = config("DB_URL")
@@ -46,7 +48,7 @@ async_session_factory = async_sessionmaker(
 )
 
 
-AsyncSessionLocal = async_scoped_session(
+AsyncScopedSession = async_scoped_session(
     session_factory=async_session_factory,
     scopefunc=asyncio.current_task
 )
@@ -64,7 +66,7 @@ async def get_db() -> AsyncIterator[AsyncSession]:
     Dependency to provide a database session for each request.
     Handles session lifecycle including commit and rollback.
     """
-    async with AsyncSessionLocal() as session:
+    async with AsyncScopedSession() as session:
         try:
             yield session
             await session.commit()
@@ -72,4 +74,5 @@ async def get_db() -> AsyncIterator[AsyncSession]:
             await session.rollback()
             raise
         finally:
-            await session.close()
+            await AsyncScopedSession.remove()
+            await session.aclose()
