@@ -43,7 +43,8 @@ class AuthService(AsyncServices):
         pass
 
     async def get_current_current_user(
-            token: Annotated[OAuth2, Depends(oauth2_scheme)]
+        self,
+        token: Annotated[OAuth2, Depends(oauth2_scheme)]
     ) -> Optional[User]:
         """
         
