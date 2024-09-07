@@ -9,12 +9,15 @@ from contextlib import asynccontextmanager
 
 from api.utils.exceptions import GlobalExceptionHandler
 from api.db.database import engine
+from api.v1.routes import api_version_one
+from api.utils.rate_limits import consume_rate_limit_queue_sync
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     
     """
+    # add consume_rate_limit_queue to run on startup
     print("Starting up application...")
     # Yield control back to FastAPI while app is running
     try:
@@ -25,6 +28,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 # Create FastAPI app with lifespan
 app = FastAPI(lifespan=lifespan)
+app.include_router(api_version_one)
 
 app.get("/", tags=['HOME'])
 async def read_root():
