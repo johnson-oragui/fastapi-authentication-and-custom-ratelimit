@@ -1,6 +1,5 @@
 import asyncio
 from typing import AsyncIterator
-from contextlib import asynccontextmanager
 from sqlalchemy.orm import (
     DeclarativeBase,
 )
@@ -14,13 +13,13 @@ from sqlalchemy.ext.asyncio import (
     async_scoped_session,
     AsyncAttrs
 )
-from decouple import config
+from api.utils.settings import settings
 
 # Create an asynchronous engine with future usage enabled
 class Base(AsyncAttrs, DeclarativeBase):
     metadata = MetaData(schema='public')
 
-DB_URL: str = config("DB_URL")
+DB_URL: str = settings.DB_URL
 engine = create_async_engine(
     url=DB_URL,
     future=True,
@@ -60,7 +59,6 @@ async def create_tables():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-@asynccontextmanager
 async def get_db() -> AsyncIterator[AsyncSession]:
     """
     Dependency to provide a database session for each request.
