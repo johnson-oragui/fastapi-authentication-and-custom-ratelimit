@@ -10,7 +10,8 @@ from api.v1.services.auth import (RegisterUserResponse,
                                   RegisterUserSchema,
                                   oauth2_scheme,
                                   OAuth2,
-                                  AccessToken)
+                                  AccessToken,
+                                  LogOutResponse)
 from api.db.database import get_db
 from api.v1.schemas.user import LoginUserSchema, LoginUserResponse
 
@@ -23,12 +24,7 @@ auth = APIRouter(prefix='/auth', tags=['AUTH'])
 async def login(request: Request,
                 login_schema: LoginUserSchema,
                 db: Annotated[AsyncSession, Depends(get_db)]):
-    """sumary_line
-    
-        Keyword arguments:
-            argument -- description
-        Return:
-            return_description
+    """Logs in a user.
     """
     check_rate_limits_sync(request)
     user_ip: str = request.client.host
@@ -43,7 +39,7 @@ async def login(request: Request,
 
 
 @auth.post('/register',
-           status_code=status.HTTP_200_OK,
+           status_code=status.HTTP_201_CREATED,
            response_model=RegisterUserResponse)
 async def register(request: Request,
                    register_schema: RegisterUserSchema,
@@ -64,7 +60,7 @@ async def register(request: Request,
 async def token(request: Request,
                 form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
                 db: Annotated[AsyncSession, Depends(get_db)]):
-    """Logs in a user.
+    """Logs in a user on openai.
     """
     check_rate_limits_sync(request)
     user_ip: str = request.client.host
@@ -77,6 +73,15 @@ async def token(request: Request,
         form_data.password,
         db
     )
+
+@auth.get('/logout',
+          status_code=status.HTTP_200_OK,
+          response_model=LogOutResponse)
+async def logout(token: Annotated[OAuth2, Depends(oauth2_scheme)]):
+    """
+    Logs out a user.
+    """
+    return await auth_service.logout_user(str(token))
 
 @auth.post('/others',
            status_code=status.HTTP_200_OK)
