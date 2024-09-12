@@ -4,12 +4,13 @@ Auth Service module
 """
 from typing import Annotated
 from datetime import datetime, timedelta, timezone
-from fastapi import Depends, status, HTTPException
+from fastapi import Depends, status, HTTPException, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 from jose import jwt, JWTError
 import hashlib
+from uuid import uuid4
 
 from api.v1.models import User
 from api.core.base.async_services import AsyncServices
@@ -18,11 +19,15 @@ from api.v1.schemas.user import(RegisterUserSchema,
                                 AccessToken,
                                 UserBase,
                                 LoginUserData,
-                                LoginUserResponse)
+                                LoginUserResponse,
+                                LogOutResponse)
 from api.utils.settings import settings
 from api.utils.background.producer import handle_login_attempt
 from api.utils.auth_rate_limits import reset_failed_attempts
 from api.utils.email_dns_resolver import check_email_deliverability
+from api.utils.token_revocation import (store_jti_in_cache,
+                                        check_active_jti,
+                                        revoke_jti)
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl='/api/v1/auth/token')
@@ -66,6 +71,7 @@ class AuthService(AsyncServices):
                 }
             )
         )
+        new_user.idempotency_key = idempotency_key
         # set a passwpord for the new user and save
         new_user.set_password(user_schema.password)
         db.add(new_user)
@@ -139,7 +145,7 @@ class AuthService(AsyncServices):
     async def check_user_exists(self, user_schema: RegisterUserSchema,
                                 db: AsyncSession):
         """
-
+        Checks if a user already exists with the provided email and also username.
         """
         # check if user's email already registered.
         email_stmt = select(User).where(
@@ -175,7 +181,7 @@ class AuthService(AsyncServices):
         # decode the token
         claims: dict = await self.verify_jwt_token(str(token))
         # check if the decoded token is a refresh token
-        if claims.get('type') == 'refresh':
+        if claims.get('token_type') == 'refresh':
             # raise an exception
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                                 detail='cannot use refresh token')
@@ -309,7 +315,7 @@ class AuthService(AsyncServices):
         # generate refresh token
         refresh_token = await self.generate_jwt_token(
             logged_in_user,
-            type='refresh'
+            token_type='refresh'
         )
         # create a response and return to he user
         user_data = LoginUserData(
@@ -340,12 +346,32 @@ class AuthService(AsyncServices):
             access_token=access_token
         )
 
-    async def generate_jwt_token(self, user: User, type: str = 'access') -> str:
+    async def logout_user(self, token: str):
+        """
+
+        """
+        claims: dict = await self.verify_jwt_token(token)
+        jti: str = claims.get('jti', '')
+        token_type: str = claims.get('token_type', '')
+        if not jti:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                detail='User must be logged in.')
+        revoke_jti(jti, token_type)
+        return LogOutResponse(
+            status_code=status.HTTP_200_OK,
+            message='Logout successful'
+        )
+        
+
+    async def generate_jwt_token(self, user: User, token_type: str = 'access') -> str:
         """
         Generate access/refresh token.
         """
-        # set expiry time based on the type of token to generate
-        if type == 'access':
+        # Generate JTI (JWT ID)
+        jti = str(uuid4())
+
+        # set expiry time based on the token_type of token to generate
+        if token_type == 'access':
             exp: int = settings.ACCESS_TOKEN_EXPIRE_MINUTES
         else:
             exp = settings.REFRESH_TOKEN_EXPIRE
@@ -354,33 +380,48 @@ class AuthService(AsyncServices):
         # set the payloads to be encoded
         claims = {
             'user_id': user.id,
-            'type': type,
+            'token_type': token_type,
+            'jti': jti,
             'iat': now,
             'exp': (now + timedelta(minutes=exp)
-                    if type == 'access'
+                    if token_type == 'access'
                     else now + timedelta(days=exp))
         }
         # generate and return the token
-        return jwt.encode(
+        token = jwt.encode(
             claims=claims,
             key=settings.SECRET_KEY,
             algorithm=settings.ALGORITHM
         )
+        store_jti_in_cache(jti, exp, token_type)
+        return token
 
     async def verify_jwt_token(self, token: str) -> dict:
         """
-        Verify/decode jwt token.
+        Verify JWT token and check if the JTI is still active (i.e., not revoked).
         """
         try:
             # decode and return the token.
-            return jwt.decode(
+            claims: dict = jwt.decode(
                 token=token,
                 key=settings.SECRET_KEY,
                 algorithms=[settings.ALGORITHM]
             )
-        except JWTError as exc:
+            token_type = claims.get('token_type', '')
+            # Check if the JTI has been revoked
+            jti = claims.get('jti', '')
+            if not check_active_jti(jti, token_type):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token has been revoked"
+            )
+
+            return claims
+        except JWTError:
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED) from exc
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token"
+            )
 
 # create an instance of the AuthService class
 auth_service = AuthService()
