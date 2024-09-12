@@ -34,7 +34,8 @@ async def login(request: Request,
     return await auth_service.login_user(
         login_schema.username,
         login_schema.password,
-        db
+        db,
+        login_schema.remember_me
     )
 
 
