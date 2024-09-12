@@ -297,7 +297,7 @@ class AuthService(AsyncServices):
         return user
 
     async def login_user(self, username: str, password: str,
-                         db: AsyncSession):
+                         db: AsyncSession, remember_me: bool = False):
         """
         Logs in a user.
         """
@@ -310,7 +310,7 @@ class AuthService(AsyncServices):
         )
         # generate access token
         access_token = await self.generate_jwt_token(
-            logged_in_user
+            logged_in_user, remember_me=remember_me
         )
         # generate refresh token
         refresh_token = await self.generate_jwt_token(
@@ -363,29 +363,43 @@ class AuthService(AsyncServices):
         )
         
 
-    async def generate_jwt_token(self, user: User, token_type: str = 'access') -> str:
+    async def generate_jwt_token(self, user: User, token_type: str = 'access',
+                                 remember_me: bool = False) -> str:
         """
         Generate access/refresh token.
         """
         # Generate JTI (JWT ID)
         jti = str(uuid4())
-
-        # set expiry time based on the token_type of token to generate
-        if token_type == 'access':
-            exp: int = settings.ACCESS_TOKEN_EXPIRE_MINUTES
-        else:
-            exp = settings.REFRESH_TOKEN_EXPIRE
         # set the current time
         now = datetime.now(timezone.utc)
+
+        # set expiry time based on the token-type to generate
+        if token_type == 'access':
+            # check if remeber_me is true
+            if remember_me:
+                exp: int = settings.REMEMBER_ME_EXPIRE
+                # set a long lived access token
+                access_expire = now + timedelta(days=exp)
+            else:
+                # if remeber_me is false
+                exp: int = settings.ACCESS_TOKEN_EXPIRE_MINUTES
+                # set a short lived accesss token
+                access_expire = now + timedelta(minutes=exp)
+        elif token_type == 'refresh':
+            exp = settings.REFRESH_TOKEN_EXPIRE
+            refresh_expire = now + timedelta(days=exp)
+        else:
+            raise ValueError('token-type must either be access or refresh')
+        
         # set the payloads to be encoded
         claims = {
             'user_id': user.id,
             'token_type': token_type,
             'jti': jti,
             'iat': now,
-            'exp': (now + timedelta(minutes=exp)
+            'exp': (access_expire
                     if token_type == 'access'
-                    else now + timedelta(days=exp))
+                    else refresh_expire)
         }
         # generate and return the token
         token = jwt.encode(
