@@ -21,6 +21,7 @@ class Settings:
     ALGORITHM: str = str(config('ALGORITHM'))
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(config('ACCESS_TOKEN_EXPIRE_MINUTES'))
     REFRESH_TOKEN_EXPIRE: int = int(config('REFRESH_TOKEN_EXPIRE'))
+    REMEMBER_ME_EXPIRE: int = int(config('REMEMBER_ME_EXPIRE'))
 
     INITIAL_LOCKOUT_DURATION: int = int(config('INITIAL_LOCKOUT_DURATION'))
     MAX_PENALTY_DURATION: int = int(config('MAX_PENALTY_DURATION'))
