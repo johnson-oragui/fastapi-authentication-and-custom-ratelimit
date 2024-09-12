@@ -87,7 +87,7 @@ class RegisterUserSchema(BaseModel):
         username: str = values.get('username', '')
 
         # not allowed characters for username, first_name, and last_name
-        name_disallowed = '1234567890!@~`#$%^&*()_+=-,.<>/?"\|'
+        name_disallowed_char = '1234567890!@~`#$%^&*()_+=-,.<>/?"\|'
         # allowed special characters for password
         password_allowed = '!@#&-_,.'
         # emails liable to fraud
@@ -115,12 +115,12 @@ class RegisterUserSchema(BaseModel):
         for c in first_name:
             if c == ' ':
                 raise ValueError('use of white space is not allowed in first_name')
-            if c in name_disallowed:
+            if c in name_disallowed_char:
                 raise ValueError(f'{c} is not allowed in first_name')
         for c in last_name:
             if c == ' ':
                 raise ValueError('use of white space is not allowed in last_name')
-            if c in name_disallowed:
+            if c in name_disallowed_char:
                 raise ValueError(f'{c} is not allowed in last_name')
         for c in username:
             if c == ' ':
@@ -163,6 +163,8 @@ class RegisterUserSchema(BaseModel):
             raise ValueError(f'{password} must contain at least one digit character')
         if not any(char for char in password if char in password_allowed):
             raise ValueError(f'{password} must contain at least one of these special characters {password_allowed}')
+        if any(char for char in password if char == ' '):
+            raise ValueError(f"{password} cannot contain a white space character")
         if password != confirm_password:
             raise ValueError(f'{password} and {confirm_password} must match')
 
@@ -219,6 +221,10 @@ class LoginUserSchema(BaseModel):
         examples=['Johnson1234#']
     )
 
+    remember_me: bool = Field(
+        default=False,
+    )
+
     @model_validator(mode='before')
     @classmethod
     def validate_data(cls, values: dict):
@@ -242,3 +248,7 @@ class LoginUserSchema(BaseModel):
             raise ValueError(f'{password} must contain at least one of these special characters {password_allowed}')
 
         return values
+
+class LogOutResponse(BaseModel):
+    status_code: int
+    message: str
