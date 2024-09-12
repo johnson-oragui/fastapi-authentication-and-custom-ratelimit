@@ -32,10 +32,11 @@ async def login(request: Request,
     message_body: str = f'{user_ip},{path}'
     send_to_queue_sync(message_body)
     return await auth_service.login_user(
-        login_schema.username,
-        login_schema.password,
-        db,
-        login_schema.remember_me
+        username=login_schema.username,
+        password=login_schema.password,
+        request=request,
+        db=db,
+        remember_me=login_schema.remember_me
     )
 
 
@@ -52,7 +53,9 @@ async def register(request: Request,
     path: str = request.url.path
     message_body: str = f'{user_ip},{path}'
     send_to_queue_sync(message_body)
-    return await auth_service.create(register_schema, db)
+    return await auth_service.create(
+        user_schema=register_schema,
+        db=db)
 
 @auth.post('/token',
            status_code=status.HTTP_200_OK,
@@ -70,19 +73,21 @@ async def token(request: Request,
     send_to_queue_sync(message_body)
     
     return await auth_service.oauth2_authenticate(
-        form_data.username,
-        form_data.password,
-        db
+        username=form_data.username,
+        password=form_data.password,
+        db=db,
+        request=request
     )
 
 @auth.get('/logout',
           status_code=status.HTTP_200_OK,
           response_model=LogOutResponse)
-async def logout(token: Annotated[OAuth2, Depends(oauth2_scheme)]):
+async def logout(token: Annotated[OAuth2, Depends(oauth2_scheme)]
+                 ,request: Request):
     """
     Logs out a user.
     """
-    return await auth_service.logout_user(str(token))
+    return await auth_service.logout_user(str(token), request)
 
 @auth.post('/others',
            status_code=status.HTTP_200_OK)
@@ -96,5 +101,8 @@ async def get(request: Request,
     path: str = request.url.path
     message_body: str = f'{user_ip},{path}'
     send_to_queue_sync(message_body)
-    await auth_service.get_current_active_user(token, db)
+    await auth_service.get_current_active_user(
+        token=token,
+        request=request,
+        db=db)
     return {'message': 'others route attempt recorded'}
