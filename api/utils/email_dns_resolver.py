@@ -17,6 +17,7 @@ async def check_email_deliverability(email: str):
     Raises:
         HTTPException: if MX not found
     """
+    print('email: ', email)
     # Extract the domain from the email address
     domain = email.split('@')[1]
     # define a cache key
@@ -25,7 +26,7 @@ async def check_email_deliverability(email: str):
     try:
         with get_redis_sync() as redis:
             # Check cache first
-            cached_result = await redis.get(domain_key)
+            cached_result = redis.get(domain_key)
             # return if cache is valid
             if cached_result and cached_result == '1':
                 return None
@@ -42,20 +43,20 @@ async def check_email_deliverability(email: str):
             # Check if at least one MX record was found
             if answers:
                 # Store result in cache
-                await redis.set(domain_key, '1', ex=3600)
+                redis.set(domain_key, '1', ex=3600)
                 # return
                 return None
             else:
                 print(f"Domain not found or no answer for DNS query:  {domain}")
                 # Cache failed result
-                await redis.set(domain_key, '0', ex=3600)
+                redis.set(domain_key, '0', ex=3600)
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                                     detail="Email domain does not have valid MX records.")
 
     except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
         print(f"Domain not found or no answer for DNS query:  {domain}")
         # Cache failed result
-        await redis.set(domain_key, '0', ex=3600)
+        redis.set(domain_key, '0', ex=3600)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                             detail="Email domain does not have valid MX records.")
     except Exception as exc:
