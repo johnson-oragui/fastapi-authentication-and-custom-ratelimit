@@ -173,13 +173,17 @@ class AuthService(AsyncServices):
     async def get_current_user(
         self,
         token: Annotated[OAuth2, Depends(oauth2_scheme)],
+        request: Request,
         db: AsyncSession
     ) -> User:
         """
         Rtrieve the current user from the provided token.
         """
         # decode the token
-        claims: dict = await self.verify_jwt_token(str(token))
+        claims: dict = await self.verify_jwt_token(
+            token=str(token),
+            request=request
+        )
         # check if the decoded token is a refresh token
         if claims.get('token_type') == 'refresh':
             # raise an exception
@@ -203,6 +207,7 @@ class AuthService(AsyncServices):
     async def get_current_active_user(
         self,
         token: Annotated[OAuth2, Depends(oauth2_scheme)],
+        request: Request,
         db: AsyncSession
     ) -> User:
         """
@@ -211,7 +216,10 @@ class AuthService(AsyncServices):
         # check the current time
         now = datetime.now(timezone.utc)
         # retrieve the current user
-        user: User = await self.get_current_user(token, db)
+        user: User = await self.get_current_user(
+            token=token,
+            request=request,
+            db=db)
         # check if user is blocked
         if user.is_blocked:
             message = 'Account locked due to multiple failed login attempts'
@@ -297,7 +305,7 @@ class AuthService(AsyncServices):
         return user
 
     async def login_user(self, username: str, password: str,
-                         db: AsyncSession, remember_me: bool = False):
+                         db: AsyncSession, request: Request, remember_me: bool = False):
         """
         Logs in a user.
         """
@@ -310,11 +318,14 @@ class AuthService(AsyncServices):
         )
         # generate access token
         access_token = await self.generate_jwt_token(
-            logged_in_user, remember_me=remember_me
+            logged_in_user,
+            request=request,
+            remember_me=remember_me
         )
         # generate refresh token
         refresh_token = await self.generate_jwt_token(
             logged_in_user,
+            request=request,
             token_type='refresh'
         )
         # create a response and return to he user
@@ -333,24 +344,31 @@ class AuthService(AsyncServices):
     async def oauth2_authenticate(self,
                                 username: str,
                                 password: str,
-                                db: AsyncSession):
+                                db: AsyncSession,
+                                request: Request):
         """
         Authenticates a user for the openapi docs usage.
         """
         # authenticate a user using provided username and password
         user = await self.authenticate_user(username, password, db)
         # generate access token
-        access_token = await self.generate_jwt_token(user)
+        access_token = await self.generate_jwt_token(
+            user,
+            request=request
+        )
         # return access token
         return AccessToken(
             access_token=access_token
         )
 
-    async def logout_user(self, token: str):
+    async def logout_user(self, token: str, request: Request):
         """
 
         """
-        claims: dict = await self.verify_jwt_token(token)
+        claims: dict = await self.verify_jwt_token(
+            token=token,
+            request=request
+        )
         jti: str = claims.get('jti', '')
         token_type: str = claims.get('token_type', '')
         if not jti:
@@ -363,7 +381,8 @@ class AuthService(AsyncServices):
         )
         
 
-    async def generate_jwt_token(self, user: User, token_type: str = 'access',
+    async def generate_jwt_token(self, user: User, request: Request,
+                                 token_type: str = 'access',
                                  remember_me: bool = False) -> str:
         """
         Generate access/refresh token.
@@ -372,6 +391,10 @@ class AuthService(AsyncServices):
         jti = str(uuid4())
         # set the current time
         now = datetime.now(timezone.utc)
+        # Get the client IP address
+        user_ip = request.client.host
+        # Get the User-Agent header
+        user_agent = request.headers.get('user-agent')
 
         # set expiry time based on the token-type to generate
         if token_type == 'access':
@@ -397,6 +420,8 @@ class AuthService(AsyncServices):
             'token_type': token_type,
             'jti': jti,
             'iat': now,
+            'ip': user_ip,
+            'user_agent': user_agent,
             'exp': (access_expire
                     if token_type == 'access'
                     else refresh_expire)
@@ -410,7 +435,7 @@ class AuthService(AsyncServices):
         store_jti_in_cache(jti, exp, token_type)
         return token
 
-    async def verify_jwt_token(self, token: str) -> dict:
+    async def verify_jwt_token(self, token: str, request: Request) -> dict:
         """
         Verify JWT token and check if the JTI is still active (i.e., not revoked).
         """
@@ -429,6 +454,24 @@ class AuthService(AsyncServices):
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Token has been revoked"
             )
+
+            # Validate IP address
+            token_ip = claims.get('ip')
+            request_ip = request.client.host
+            if token_ip != request_ip:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="IP address mismatch"
+                )
+
+            # Validate User-Agent
+            token_user_agent = claims.get('user_agent')
+            request_user_agent = request.headers.get('user-agent')
+            if token_user_agent != request_user_agent:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User-Agent mismatch"
+                )
 
             return claims
         except JWTError:
